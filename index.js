@@ -1,71 +1,83 @@
+require('dotenv').config({ quiet: true });
+const path = require('node:path');
+const crypto = require('node:crypto');
 const express = require('express');
-const axios = require('axios');
-const app = express();
+const { createClient, getRecords, objectPath, safeError, fields } = require('./lib/hubspot');
 
-app.set('view engine', 'pug');
-app.use(express.static(__dirname + '/public'));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+function createApp({ client, objectTypeId }) {
+  objectPath(objectTypeId);
+  const app = express();
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+  const formTitle = 'Update Custom Object Form | Integrating With HubSpot I Practicum';
+  app.disable('x-powered-by');
+  app.set('view engine', 'pug');
+  app.set('views', path.join(__dirname, 'views'));
+  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+  app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    next();
+  });
 
-// * Please DO NOT INCLUDE the private app access token in your repo. Don't do this practicum in your normal account.
-const PRIVATE_APP_ACCESS = '';
-
-// TODO: ROUTE 1 - Create a new app.get route for the homepage to call your custom object data. Pass this data along to the front-end and create a new pug template in the views folder.
-
-// * Code for Route 1 goes here
-
-// TODO: ROUTE 2 - Create a new app.get route for the form to create or update new custom object data. Send this data along in the next route.
-
-// * Code for Route 2 goes here
-
-// TODO: ROUTE 3 - Create a new app.post route for the custom objects form to create or update your custom object data. Once executed, redirect the user to the homepage.
-
-// * Code for Route 3 goes here
-
-/** 
-* * This is sample code to give you a reference for how you should structure your calls. 
-
-* * App.get sample
-app.get('/contacts', async (req, res) => {
-    const contacts = 'https://api.hubspot.com/crm/v3/objects/contacts';
-    const headers = {
-        Authorization: `Bearer ${PRIVATE_APP_ACCESS}`,
-        'Content-Type': 'application/json'
-    }
+  // Route 1: retrieve every page and explicitly request all three properties.
+  app.get('/', async (req, res) => {
     try {
-        const resp = await axios.get(contacts, { headers });
-        const data = resp.data.results;
-        res.render('contacts', { title: 'Contacts | HubSpot APIs', data });      
+      const records = await getRecords(client, objectTypeId);
+      res.render('homepage', { title: 'Property Listings | Integrating With HubSpot I Practicum', records });
     } catch (error) {
-        console.error(error);
+      res.status(502).render('error', { title: 'Unable to load records', message: safeError(error) });
     }
-});
+  });
 
-* * App.post sample
-app.post('/update', async (req, res) => {
-    const update = {
-        properties: {
-            "favorite_book": req.body.newVal
-        }
+  // Route 2: render the form, with the exact title required by the practicum.
+  app.get('/update-cobj', (req, res) => {
+    res.render('updates', { title: formTitle, values: {}, errors: [], csrfToken });
+  });
+
+  // Route 3: validate, create a CRM record, and redirect only after success.
+  app.post('/update-cobj', async (req, res) => {
+    if (req.body?._csrf !== csrfToken) {
+      return res.status(403).render('error', { title: 'Form expired', message: 'Reopen the form and try again.' });
     }
-
-    const email = req.query.email;
-    const updateContact = `https://api.hubapi.com/crm/v3/objects/contacts/${email}?idProperty=email`;
-    const headers = {
-        Authorization: `Bearer ${PRIVATE_APP_ACCESS}`,
-        'Content-Type': 'application/json'
-    };
-
-    try { 
-        await axios.patch(updateContact, update, { headers } );
-        res.redirect('back');
-    } catch(err) {
-        console.error(err);
+    const values = {};
+    const errors = [];
+    for (const field of fields) {
+      values[field] = typeof req.body[field] === 'string' ? req.body[field].trim() : '';
+      const max = 150;
+      if (!values[field] || values[field].length > max) errors.push(`${field}: enter between 1 and ${max} characters.`);
     }
+    if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(values.price) || Number(values.price) <= 0) errors.push('Enter a positive price in MYR, with up to two decimal places.');
+    if (errors.length) return res.status(400).render('updates', { title: formTitle, values, errors, csrfToken });
+    try {
+      await client.post(objectPath(objectTypeId), { properties: values });
+      return res.redirect(303, '/');
+    } catch (error) {
+      return res.status(502).render('updates', {
+        title: formTitle, values, csrfToken,
+        errors: [safeError(error), 'If the connection timed out, check the homepage before submitting again to avoid duplicates.'],
+      });
+    }
+  });
 
-});
-*/
+  app.use((error, req, res, next) => {
+    res.status(error.type === 'entity.too.large' ? 413 : 400)
+      .render('error', { title: 'Request could not be processed', message: 'Please return to the form and try again.' });
+  });
+  return app;
+}
 
+if (require.main === module) {
+  try {
+    const app = createApp({ client: createClient(process.env.HUBSPOT_ACCESS_TOKEN), objectTypeId: process.env.HUBSPOT_OBJECT_TYPE_ID });
+    const port = Number(process.env.PORT || 3000);
+    // Local practicum only; no public unauthenticated CRM write endpoint.
+    app.listen(port, '127.0.0.1', () => console.log(`Open http://localhost:${port}`));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}
 
-// * Localhost
-app.listen(3000, () => console.log('Listening on http://localhost:3000'));
+module.exports = { createApp };

@@ -1,0 +1,23 @@
+extends layout
+
+block content
+  a.button(href="/update-cobj") Add to this table
+  h1 Property Listings
+  p.lead Records retrieved from the HubSpot custom object.
+  .table-wrap
+    table
+      caption Property project records
+      thead
+        tr
+          th(scope="col") Name
+          th(scope="col") Area
+          th(scope="col") Asking price (MYR)
+      tbody
+        each record in records
+          tr
+            td= record.properties.name || '—'
+            td= record.properties.area || '—'
+            td= record.properties.price || '—'
+        else
+          tr
+            td(colspan="3") No records yet. Add the first listing using the link above.
