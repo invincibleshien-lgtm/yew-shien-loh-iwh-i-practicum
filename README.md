@@ -28,15 +28,19 @@ ___
 - You must create a developer test account and link to it in your README.md file. Submissions that do not meet this requirement will not be considered.
 
 
-[Property Projects](https://app-na2.hubspot.com/contacts/248057519/objects/2-272119771/views/all/list)
+
 
 # Property Listing practicum
 
-AI-assisted implementation draft. Uses Express, Axios and Pug to read and create listings with a name, area and asking price in Malaysian ringgit.
+AI-assisted implementation. Uses Express, Axios and Pug to read and create listings with a name, area and asking price in Malaysian ringgit.
 
-TEST_OBJECT_LIST_LINK_PENDING
+[Open Property Listings in the developer test account](https://app.hubspot.com/contacts/248057519/objects/2-272149160/views/all/list)
 
 ## Run locally
 
 Install dependencies with `npm install`. Copy `.env.example` to `.env` and set the private app token locally. Run `npm run setup` in test account 248057519 to configure the schema, seed missing sample records and fill the list link above. Use `npm test` for the simulated route tests and `npm start` to open the app at http://localhost:3000. Use the form to add a listing and check it in both the app and HubSpot before submission.
+
+## Verification
+
+All nine route tests passed. Live verification in account 248057519 confirmed the Contacts association, homepage read, form POST, HTTP 303 redirect and CRM readback of record 359231786734.
 
